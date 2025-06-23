@@ -10,32 +10,8 @@ function extractCSS(text) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "testOllama") {
-    fetch("http://localhost:11434/api/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "codellama",
-        prompt: "Write CSS to make all text green.",
-        stream: false
-      })
-    })
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then(data => {
-        sendResponse({ data: data.response });
-      })
-      .catch(err => {
-        sendResponse({ error: err.message });
-      });
-
-    return true; // Required to indicate async response
-  }
-
   if (message.type === "applyOllama") {
-    const { instruction, dom, tabId } = message;
+    const { instruction, dom, tabId, model} = message;
     const prompt = `Given the following HTML DOM:\n${dom}\n\nAnd this instruction: "${instruction}"\n\n
     
     Return only a code block with the CSS like:
@@ -50,7 +26,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "codellama",
+        model: model,
         prompt: prompt,
         stream: false
       })
