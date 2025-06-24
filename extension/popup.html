@@ -3,13 +3,27 @@
   <head>
     <title>Popup</title>
     <script src="popup.js"></script>
+    <link rel="stylesheet" href="popup.css">
   </head>
   <body>
-    <textarea id="instruction" rows="4" cols="40"></textarea>
-    <br>
-    <button id="applyChanges">Apply</button>
-    <button id="saveCssBtn">Save CSS</button>
-    <select id="modelSelect"></select>
-    <pre id="output" style="white-space: pre-wrap;"></pre>
+    <div class="container">
+      <textarea id="instruction" rows="4" cols="40" placeholder="Describe how you want to change the page..."></textarea>
+      <div class="actions">
+        <button id="applyChanges" class="primary">Apply</button>
+        <button id="saveCssBtn">Save CSS</button>
+        <select id="modelSelect"></select>
+<!--        <span id="spinner">⏳</span>-->
+      </div>
+      <label class="toggle-label">
+        <input type="checkbox" id="toggleCss">
+        Enable saved CSS for this site
+      </label>
+      <pre id="output" class="output"></pre>
+      <div style="margin-top:18px; text-align:right;">
+        <a href="#" id="manageCssLink" style="color:#6366f1; text-decoration:underline; font-size:0.98em;">
+          Dashboard
+        </a>
+      </div>
+    </div>
   </body>
 </html>

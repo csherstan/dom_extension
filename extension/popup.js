@@ -21,44 +21,144 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Add this after DOMContentLoaded
   document.getElementById('saveCssBtn').addEventListener('click', async () => {
-    let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id) return;
-    const url = new URL(tab.url).origin;
-    const output = document.getElementById('output').textContent;
-    // Extract CSS from output (reuse extractCSS logic if needed)
-    const css = output; // Or use your extractCSS function here
-    chrome.storage.local.set({ [url]: css }, () => {
-      document.getElementById('output').textContent = 'CSS saved for this site!';
-    });
+    const outputEl = document.getElementById('output');
+    outputEl.textContent = 'Saving CSS...';
+    try {
+      let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.id) {
+        outputEl.textContent = 'No active tab found.';
+        return;
+      }
+      const url = new URL(tab.url).origin;
+      // Fetch the injected CSS from the page
+      chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => {
+          const style = document.getElementById('__ollama_css');
+          return style ? style.textContent : null;
+        }
+      }).then(([result]) => {
+        const css = result.result;
+        if (!css) {
+          outputEl.textContent = 'No injected CSS found to save.';
+          return;
+        }
+        chrome.storage.local.set({ [url]: css }, () => {
+          outputEl.textContent = 'CSS saved for this site!';
+        });
+      }).catch(err => {
+        outputEl.textContent = `Error fetching injected CSS: ${err.message}`;
+      });
+    } catch (err) {
+      outputEl.textContent = `Error saving CSS: ${err.message}`;
+    }
   });
 
   document.getElementById('applyChanges').addEventListener('click', async () => {
-    const instruction = document.getElementById('instruction').value;
-    let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id) return;
+    const outputEl = document.getElementById('output');
+    outputEl.textContent = 'Applying changes...';
+    try {
+      const instruction = document.getElementById('instruction').value;
+      if (!instruction.trim()) {
+        outputEl.textContent = 'Please enter an instruction.';
+        return;
+      }
+      let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.id) {
+        outputEl.textContent = 'No active tab found.';
+        return;
+      }
 
-    const model = document.getElementById('modelSelect').value;
+      const model = document.getElementById('modelSelect').value;
 
-    // Get the full DOM from the content script
-    chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: () => document.documentElement.outerHTML
-    }).then(([result]) => {
-      const dom = result.result;
-      chrome.runtime.sendMessage(
-        { type: "applyOllama", instruction, dom, tabId: tab.id , model},
-        (response) => {
-          if (chrome.runtime.lastError) {
-            document.getElementById('output').textContent = `Runtime error: ${chrome.runtime.lastError.message}`;
-            return;
-          }
-          if (response?.error) {
-            document.getElementById('output').textContent = `Error: ${response.error}`;
-          } else {
-            document.getElementById('output').textContent = "CSS applied!\n\nLLM Output:\n" + (response.llmOutput || "");
-          }
+      // Get the full DOM from the content script, but remove injected CSS first
+      chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => {
+          // Clone the document to avoid modifying the live DOM
+          const docClone = document.documentElement.cloneNode(true);
+          const style = docClone.querySelector('style#__ollama_css');
+          if (style) style.remove();
+          // Serialize the clone to HTML
+          return '<!DOCTYPE html>\n' + docClone.outerHTML;
         }
-      );
+      }).then(([result]) => {
+        const dom = result.result;
+        chrome.runtime.sendMessage(
+          { type: "applyOllama", instruction, dom, tabId: tab.id , model},
+          (response) => {
+            if (chrome.runtime.lastError) {
+              outputEl.textContent = `Runtime error: ${chrome.runtime.lastError.message}`;
+              return;
+            }
+            if (response?.error) {
+              outputEl.textContent = `Error: ${response.error}`;
+            } else {
+              const llmOutput = response.llmOutput || "";
+              outputEl.textContent = "CSS applied!\n\nLLM Output:\n" + llmOutput;
+
+              // Validate and apply CSS if present in LLM output
+              const cssMatch = llmOutput.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
+              if (cssMatch && cssMatch[1]) {
+                const css = cssMatch[1];
+                // Apply the CSS to the page
+                chrome.scripting.insertCSS({
+                  target: { tabId: tab.id },
+                  css: css
+                }).then(() => {
+                  outputEl.textContent += "\n\nCSS successfully applied from LLM output.";
+                }).catch(err => {
+                  outputEl.textContent += `\n\nError applying CSS from LLM output: ${err.message}`;
+                });
+              } else {
+                outputEl.textContent += "\n\nNo valid CSS found in LLM output.";
+              }
+            }
+          }
+        );
+      }).catch(err => {
+        outputEl.textContent = `Error extracting DOM: ${err.message}`;
+      });
+    } catch (err) {
+      outputEl.textContent = `Unexpected error: ${err.message}`;
+    }
+  });
+
+  // Handle enable/disable toggle for saved CSS
+  let currentOrigin = null;
+  chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+    if (!tab?.url) return;
+    currentOrigin = new URL(tab.url).origin;
+    chrome.storage.local.get([currentOrigin + '_enabled'], (result) => {
+      const enabled = result[currentOrigin + '_enabled'];
+      const toggle = document.getElementById('toggleCss');
+      toggle.checked = enabled !== false; // default to enabled
     });
+  });
+
+  document.getElementById('toggleCss').addEventListener('change', function (e) {
+    if (!currentOrigin) return;
+    const enabled = e.target.checked;
+    chrome.storage.local.set({ [currentOrigin + '_enabled']: enabled }, () => {
+      const outputEl = document.getElementById('output');
+      outputEl.textContent = enabled
+        ? 'Saved CSS enabled for this site.'
+        : 'Saved CSS disabled for this site.';
+      // Notify content script to update CSS immediately
+      chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+        if (!tab?.id) return;
+        chrome.tabs.sendMessage(tab.id, { type: "updateSavedCSS" });
+      });
+    });
+  });
+
+  // Open options page when "Manage all saved CSS" is clicked
+  document.getElementById('manageCssLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    if (chrome.runtime.openOptionsPage) {
+      chrome.runtime.openOptionsPage();
+    } else {
+      window.open('options.html');
+    }
   });
 });
