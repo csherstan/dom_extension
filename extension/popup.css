@@ -3,7 +3,7 @@ body {
   font-family: 'Segoe UI', Arial, sans-serif;
   margin: 0;
   padding: 0;
-  min-width: 340px;
+  min-width: 380px;
   min-height: 320px;
 }
 
@@ -13,19 +13,21 @@ body {
   border-radius: 12px;
   box-shadow: 0 2px 12px rgba(0,0,0,0.07);
   margin: 12px;
+  max-width: 420px;
 }
 
 textarea#instruction {
   width: 100%;
-  min-height: 70px;
+  min-height: 64px;
   border-radius: 8px;
   border: 1px solid #d1d5db;
-  padding: 10px;
+  padding: 8px;
   font-size: 1em;
   resize: vertical;
   margin-bottom: 12px;
   background: #f9fafb;
   transition: border 0.2s;
+  box-sizing: border-box;
 }
 
 textarea#instruction:focus {
@@ -36,20 +38,32 @@ textarea#instruction:focus {
 
 .actions {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 10px;
   margin-bottom: 10px;
+}
+
+button,
+select#modelSelect {
+  height: 36px;
+  min-height: 36px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
 }
 
 button {
   border: none;
   border-radius: 6px;
-  padding: 8px 16px;
+  padding: 0 16px;
   font-size: 1em;
   background: #e5e7eb;
   color: #222;
   cursor: pointer;
   transition: background 0.2s, color 0.2s;
+  height: 36px;
+  min-height: 36px;
+  line-height: 1.2;
 }
 
 button.primary {
@@ -68,10 +82,13 @@ button.primary:hover, button.primary:focus {
 select#modelSelect {
   border-radius: 6px;
   border: 1px solid #d1d5db;
-  padding: 6px 10px;
+  padding: 0 10px;
   font-size: 1em;
   background: #f3f4f6;
   color: #222;
+  height: 36px;
+  min-height: 36px;
+  line-height: 1.2;
 }
 
 #spinner {
@@ -100,7 +117,7 @@ select#modelSelect {
   min-height: 2em;
   background: #f3f4f6;
   border-radius: 8px;
-  padding: 10px;
+  padding: 8px;
   font-size: 0.98em;
   color: #222;
   border: 1px solid #e5e7eb;
@@ -108,4 +125,3 @@ select#modelSelect {
   overflow: auto;
   white-space: pre-wrap;
 }
-
