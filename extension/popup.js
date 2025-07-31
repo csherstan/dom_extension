@@ -83,7 +83,21 @@ document.addEventListener('DOMContentLoaded', function () {
           return '<!DOCTYPE html>\n' + docClone.outerHTML;
         }
       }).then(([result]) => {
-        const dom = result.result;
+        let dom = result.result;
+        // Clean the HTML using DOMPurify before sending to LLM
+        if (window.DOMPurify) {
+          dom = window.DOMPurify.sanitize(dom, {
+            ALLOWED_TAGS: [
+              'html', 'head', 'body', 'div', 'span', 'p', 'a', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'td', 'th',
+              'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'img', 'button', 'input', 'form', 'label', 'section', 'article', 'nav', 'footer', 'header', 'main', 'em', 'strong', 'b', 'i', 'u', 'br', 'hr', 'pre', 'code', 'select', 'option', 'textarea', 'svg', 'path', 'circle', 'rect', 'g', 'text', 'small', 'sup', 'sub', 'video', 'audio', 'source', 'figure', 'figcaption', 'blockquote', 'cite', 'dl', 'dt', 'dd', 'details', 'summary', 'mark', 'time', 'abbr', 'data', 'kbd', 'samp', 'var', 'wbr', 'col', 'colgroup', 'caption', 'tbody', 'tfoot', 'thead', 'track', 'map', 'area', 'canvas', 'meter', 'output', 'progress', 'template', 'datalist', 'fieldset', 'legend', 'optgroup', 'picture', 'portal', 'slot', 'noscript'
+            ],
+            ALLOWED_ATTR: [
+              'id', 'class', 'href', 'src', 'alt', 'title', 'type', 'value', 'name', 'placeholder', 'role', 'aria-*', 'tabindex', 'style', 'width', 'height', 'colspan', 'rowspan', 'data-*'
+            ],
+            RETURN_DOM: false
+          });
+        }
+        lastCleanedDom = dom;
         chrome.runtime.sendMessage(
           { type: "applyOllama", instruction, dom, tabId: tab.id , model},
           (response) => {
@@ -122,6 +136,26 @@ document.addEventListener('DOMContentLoaded', function () {
     } catch (err) {
       outputEl.textContent = `Unexpected error: ${err.message}`;
     }
+  });
+
+  // Save Cleaned DOM button handler
+  let lastCleanedDom = '';
+  document.getElementById('saveCleanedDomBtn').addEventListener('click', () => {
+    if (!lastCleanedDom) {
+      alert('No cleaned DOM available. Please apply changes first.');
+      return;
+    }
+    const blob = new Blob([lastCleanedDom], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'cleaned_dom.html';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 100);
   });
 
   // Handle enable/disable toggle for saved CSS

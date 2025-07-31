@@ -21,3 +21,11 @@ Environment="OLLAMA_ORIGINS=*"
 
 sudo service ollama restart
 ```
+
+---
+Updating openweb-ui
+
+```
+docker pull ghcr.io/open-webui/open-webui:cuda
+docker run -d -p 3000:8080 --gpus all --add-host=host.docker.internal:host-gateway -v open-webui:/app/backend/data --name open-webui --restart always ghcr.io/open-webui/open-webui:cuda 
+```
