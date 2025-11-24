@@ -110,23 +110,6 @@ document.addEventListener('DOMContentLoaded', function () {
             } else {
               const llmOutput = response.llmOutput || "";
               outputEl.textContent = "CSS applied!\n\nLLM Output:\n" + llmOutput;
-
-              // Validate and apply CSS if present in LLM output
-              const cssMatch = llmOutput.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
-              if (cssMatch && cssMatch[1]) {
-                const css = cssMatch[1];
-                // Apply the CSS to the page
-                chrome.scripting.insertCSS({
-                  target: { tabId: tab.id },
-                  css: css
-                }).then(() => {
-                  outputEl.textContent += "\n\nCSS successfully applied from LLM output.";
-                }).catch(err => {
-                  outputEl.textContent += `\n\nError applying CSS from LLM output: ${err.message}`;
-                });
-              } else {
-                outputEl.textContent += "\n\nNo valid CSS found in LLM output.";
-              }
             }
           }
         );
