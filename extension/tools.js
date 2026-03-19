@@ -17,8 +17,13 @@ const identifySectionByTextDefinition = {
   }
 };
 async function identifySectionByText(dom, { text }) {
+  console.log(`[Tool] === identify_section_by_text START ===`);
+  console.log(`[Tool] identify_section_by_text called with text: "${text}"`);
+  console.log(`[Tool] identify_section_by_text received DOM length: ${(dom || '').length} chars`);
+
   const parser = new DOMParser();
   const doc = parser.parseFromString(dom, "text/html");
+  console.log(`[Tool] identify_section_by_text parsed DOM successfully`);
   const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT, null, false);
   let matches = [];
   while (walker.nextNode()) {
@@ -32,9 +37,16 @@ async function identifySectionByText(dom, { text }) {
     !arr.some(other => other !== el && other.contains(el))
   );
   const selectors = matches.map(getUniqueSelector).filter(Boolean);
-  return selectors.length
+
+  const result = selectors.length
     ? `Selectors for section(s) containing "${text}":\n` + selectors.join('\n')
     : `No section found containing "${text}".`;
+
+  console.log(`[Tool] identify_section_by_text result: Found ${selectors.length} selector(s)`);
+  console.log(`[Tool] identify_section_by_text output:`, result);
+  console.log(`[Tool] === identify_section_by_text END ===`);
+
+  return result;
 }
 
 // Identify section by position
@@ -60,17 +72,30 @@ const identifySectionByPositionDefinition = {
   }
 };
 async function identifySectionByPosition(dom, { tag, index }) {
+  console.log(`[Tool] === identify_section_by_position START ===`);
+  console.log(`[Tool] identify_section_by_position called with tag: "${tag}", index: ${index}`);
+  console.log(`[Tool] identify_section_by_position received DOM length: ${(dom || '').length} chars`);
+
   const parser = new DOMParser();
   const doc = parser.parseFromString(dom, "text/html");
   const elements = Array.from(doc.getElementsByTagName(tag));
+
+  console.log(`[Tool] identify_section_by_position: Found ${elements.length} <${tag}> elements`);
+
+  let result;
   if (elements.length > index) {
     const selector = getUniqueSelector(elements[index]);
-    return selector
+    result = selector
       ? `Selector for the ${index}th <${tag}>: ${selector}`
       : `Could not generate selector for the ${index}th <${tag}>.`;
   } else {
-    return `No <${tag}> element at index ${index}.`;
+    result = `No <${tag}> element at index ${index}.`;
   }
+
+  console.log(`[Tool] identify_section_by_position output:`, result);
+  console.log(`[Tool] === identify_section_by_position END ===`);
+
+  return result;
 }
 
 // Tool: Get the current DOM as HTML
@@ -87,8 +112,42 @@ const getDomDefinition = {
 };
 // Handler for get_dom: expects dom as first argument, but ignores it
 async function getDom(dom, _params) {
+  console.log(`[Tool] === get_dom START ===`);
+  console.log(`[Tool] get_dom called`);
+  console.log(`[Tool] get_dom: Returning DOM with length ${(dom || "").length} characters`);
+  console.log(`[Tool] === get_dom END ===`);
+
   // Just return the dom argument
   return dom || "";
+}
+
+// Tool: Submit final CSS output
+const finalOutputDefinition = {
+  type: "function",
+  function: {
+    name: "final_output",
+    description: "Submit the final CSS code to be applied to the page. Call this when you have generated the CSS and are ready to complete the task.",
+    parameters: {
+      type: "object",
+      properties: {
+        css: {
+          type: "string",
+          description: "The complete CSS code to apply to the page. Should be valid CSS without markdown code fences."
+        }
+      },
+      required: ["css"]
+    }
+  }
+};
+async function finalOutput(dom, { css }) {
+  console.log(`[Tool] === final_output START ===`);
+  console.log(`[Tool] final_output called`);
+  console.log(`[Tool] final_output received CSS length: ${(css || '').length} chars`);
+  console.log(`[Tool] final_output CSS preview:`, css?.substring(0, 200));
+  console.log(`[Tool] === final_output END ===`);
+
+  // Return a special marker that background.js will recognize
+  return `__FINAL_CSS__${css}`;
 }
 
 // Helper: Generate a unique CSS selector for an element
@@ -127,6 +186,10 @@ export const toolsMap = {
   get_dom: {
     definition: getDomDefinition,
     handler: getDom
+  },
+  final_output: {
+    definition: finalOutputDefinition,
+    handler: finalOutput
   }
 };
 

@@ -236,21 +236,28 @@ function isValidCSS(css) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "applyOllama") {
     const { instruction, dom, tabId, model } = message;
-    const systemPrompt = `You are a CSS generation assistant. When you finish using tools (or if you don't need tools), you MUST respond with ONLY valid CSS code inside a markdown code block.
+    const systemPrompt = `You are a CSS generation assistant with access to tools for analyzing the DOM.
 
-CORRECT format:
-\`\`\`css
-body {
-  background-color: blue;
-}
-\`\`\`
+AVAILABLE TOOLS:
+- identify_section_by_text: Find CSS selectors for elements containing specific text
+- identify_section_by_position: Find CSS selectors for elements by tag and position
+- get_dom: Retrieve the current DOM structure
+- final_output: Submit your final CSS code (REQUIRED as the last tool call)
 
-INCORRECT formats (do NOT use these):
-- \`\`\`css\ncss { body { ... } }\n\`\`\`
-- Including JSON or tool calls in your final response
-- Adding explanations outside the code block
+WORKFLOW:
+1. If the user's instruction references specific text, elements, or positions, use the appropriate tools to find the correct selectors
+2. Generate valid CSS based on the tool results and the user's instruction
+3. REQUIRED: Call the final_output tool with your CSS code to complete the task
 
-Your final response must contain ONLY the CSS code block, nothing else.`;
+IMPORTANT: You MUST use the final_output tool to submit your CSS. Do NOT return CSS in text responses.
+The CSS you pass to final_output should be plain CSS without markdown code fences.
+
+Example flow:
+1. Call identify_section_by_text with text: "Login"
+2. Receive selector: "#login-button"
+3. Call final_output with css: "#login-button { color: red; }"
+
+Do NOT include explanations or text responses - only use tool calls.`;
 
     // Compose chat history for MCP
     const chatHistory = [
@@ -261,10 +268,8 @@ Your final response must contain ONLY the CSS code block, nothing else.`;
       {
         role: "user",
         content:
-          `HTML DOM:\n${dom}\n\n` +
           `Instruction: ${instruction}\n\n` +
-          `Generate CSS that modifies the DOM according to the instruction. Use only selectors that exist in the provided DOM. ` +
-          `Your response must be ONLY a code block starting with \`\`\`css and ending with \`\`\`.`
+          `Use the available tools to identify the correct selectors from the page DOM, then call final_output with the CSS code.`
       }
     ];
 
@@ -276,13 +281,28 @@ Your final response must contain ONLY the CSS code block, nothing else.`;
         tools,
         stream: false
       };
+
+      console.log(`[Ollama Extension] === REQUEST TO OLLAMA ===`);
+      console.log(`[Ollama Extension] Model: ${model}`);
+      console.log(`[Ollama Extension] Number of messages: ${history.length}`);
+      console.log(`[Ollama Extension] Number of tools: ${tools.length}`);
+      console.log(`[Ollama Extension] Tools being sent:`, JSON.stringify(tools, null, 2));
+      console.log(`[Ollama Extension] Last message:`, history[history.length - 1]);
+      console.log(`[Ollama Extension] === END REQUEST ===`);
+
       const res = await fetch("http://localhost:11434/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
+      const responseData = await res.json();
+
+      console.log(`[Ollama Extension] === RESPONSE FROM OLLAMA ===`);
+      console.log(`[Ollama Extension] Full response:`, JSON.stringify(responseData, null, 2));
+      console.log(`[Ollama Extension] === END RESPONSE ===`);
+
+      return responseData;
     }
 
     // Main MCP loop
@@ -291,29 +311,71 @@ Your final response must contain ONLY the CSS code block, nothing else.`;
       let tools = toolDefinitions;
       let finalResponse = null;
 
+      console.log(`[Ollama Extension] Starting MCP loop with ${tools.length} tools available`);
+      console.log(`[Ollama Extension] Tool names:`, tools.map(t => t.function.name));
+
       for (let i = 0; i < 3; ++i) { // up to 3 tool calls
+        console.log(`[Ollama Extension] MCP iteration ${i + 1}/3`);
         const data = await sendChat(history, tools);
         const msg = data.message || {};
+
         if (msg.tool_calls && msg.tool_calls.length > 0) {
+          console.log(`[Ollama Extension] LLM requested ${msg.tool_calls.length} tool call(s)`);
+
           // Only handle the first tool call for now
           const toolCall = msg.tool_calls[0];
-          const toolEntry = toolsMap[toolCall.name];
+          // Ollama returns tool calls with structure: { id, function: { name, arguments } }
+          const toolName = toolCall.function?.name || toolCall.name;
+          const toolParams = toolCall.function?.arguments || toolCall.parameters || {};
+
+          console.log(`[Ollama Extension] Processing tool call: ${toolName}`);
+          console.log(`[Ollama Extension] Tool parameters:`, toolParams);
+
+          const toolEntry = toolsMap[toolName];
+          console.log(`[Ollama Extension] toolsMap lookup result:`, toolEntry ? 'FOUND' : 'NOT FOUND');
+          console.log(`[Ollama Extension] Available tools:`, Object.keys(toolsMap));
+
           if (toolEntry && typeof toolEntry.handler === "function") {
-            const params = toolCall.parameters || {};
-            // Pass dom as first argument for all tools
-            const output = await toolEntry.handler(dom, params);
-            // Add tool call and result to history
-            history.push({
-              role: "assistant",
-              content: "",
-              tool_calls: [toolCall]
-            });
-            history.push({
-              role: "tool",
-              content: output,
-              tool_call_id: toolCall.id
-            });
-            continue;
+            console.log(`[Ollama Extension] About to call handler for ${toolName}`);
+            console.log(`[Ollama Extension] Calling with params:`, toolParams);
+
+            try {
+              const output = await toolEntry.handler(dom, toolParams);
+              console.log(`[Ollama Extension] Tool ${toolName} completed successfully`);
+              console.log(`[Ollama Extension] Tool output:`, output);
+
+              // Check if this is the final_output tool
+              if (toolName === 'final_output' && output.startsWith('__FINAL_CSS__')) {
+                console.log(`[Ollama Extension] final_output tool called, extracting CSS`);
+                const css = output.substring('__FINAL_CSS__'.length);
+                console.log(`[Ollama Extension] Extracted CSS from final_output:`, css);
+                finalResponse = css;
+                // Break out of the loop - we have our final CSS
+                break;
+              }
+
+              // Add tool call and result to history
+              history.push({
+                role: "assistant",
+                content: "",
+                tool_calls: [toolCall]
+              });
+              history.push({
+                role: "tool",
+                content: output,
+                tool_call_id: toolCall.id
+              });
+              continue;
+            } catch (toolError) {
+              console.error(`[Ollama Extension] Tool ${toolName} threw error:`, toolError);
+              console.error(`[Ollama Extension] Error stack:`, toolError.stack);
+            }
+          } else {
+            console.error(`[Ollama Extension] Tool ${toolName} not found or invalid handler`);
+            console.error(`[Ollama Extension] toolEntry type:`, typeof toolEntry);
+            if (toolEntry) {
+              console.error(`[Ollama Extension] handler type:`, typeof toolEntry.handler);
+            }
           }
         }
         // No tool calls, final response
@@ -322,8 +384,17 @@ Your final response must contain ONLY the CSS code block, nothing else.`;
         break;
       }
 
-      let css = extractCSS(finalResponse);
-      console.log("[Ollama Extension] Extracted CSS (raw):", css);
+      // If finalResponse is already raw CSS (from final_output tool), use it directly
+      let css;
+      if (finalResponse && !finalResponse.includes('```')) {
+        // Likely raw CSS from final_output tool
+        console.log("[Ollama Extension] Using raw CSS from final_output tool");
+        css = finalResponse;
+      } else {
+        // Try to extract CSS from markdown (fallback for old behavior)
+        css = extractCSS(finalResponse);
+        console.log("[Ollama Extension] Extracted CSS (raw):", css);
+      }
 
       if (!css) {
         console.error("[Ollama Extension] No CSS found. Full response:", finalResponse);
